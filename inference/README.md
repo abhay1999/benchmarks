@@ -56,20 +56,38 @@ campaign identity differs from existing runs.
 
 ## Local simulator example
 
+### Prerequisites
+
+Create a Kind cluster and install the Gateway API CRDs on it first. The CRDs
+are required even for the `service` treatment: `run-benchmark.sh` resolves
+its internal endpoint with `kubectl get service,gateway`, which fails if the
+`gateway` resource type isn't registered on the cluster.
+
+```bash
+kind create cluster --name agentgateway-benchmark
+
+kubectl apply --server-side -f \
+  "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/experimental-install.yaml"
+```
+
 Run the Service treatment:
 
 ```bash
+CLUSTER_NAME=agentgateway-benchmark \
 BENCHMARK_TREATMENT=service \
 BENCHMARK_CAMPAIGN_ID=local-sim \
-make -C controller benchmark
+BENCHMARK_CLUSTER_PROVIDER=kind \
+./run-benchmark.sh
 ```
 
 Then run standalone agentgateway with the same inputs:
 
 ```bash
+CLUSTER_NAME=agentgateway-benchmark \
 BENCHMARK_TREATMENT=agentgateway-standalone \
 BENCHMARK_CAMPAIGN_ID=local-sim \
-make -C controller benchmark
+BENCHMARK_CLUSTER_PROVIDER=kind \
+./run-benchmark.sh
 ```
 
 The Kind provider is the default. It always imports the selected agentgateway
