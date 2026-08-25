@@ -1,0 +1,82 @@
+# Draft - not wired into .github/workflows/ yet. Move it there once we're
+# ready to push (see regression/README.md).
+#
+# Runs the Gap 2 benchmark (both arms) on a manual trigger, then checks
+# each arm's p99 request latency against its stored baseline.json.
+name: Benchmark Regression Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: "Regression threshold, as a fraction (e.g. 0.10 = 10%)"
+        required: false
+        default: "0.10"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  regression-check:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      CLUSTER_NAME: benchmark-ci
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+
+      - name: Install Python deps for the regression check
+        run: pip install pyyaml
+
+      - name: Set up kind cluster
+        run: make -C controller kind-create
+
+      - name: Run benchmark - Service treatment
+        run: |
+          BENCHMARK_TREATMENT=service \
+          BENCHMARK_CAMPAIGN_ID=ci-regression \
+          BENCHMARK_CLUSTER_PROVIDER=kind \
+          ./inference/run-benchmark.sh
+
+      - name: Run benchmark - Agentgateway Standalone treatment
+        run: |
+          BENCHMARK_TREATMENT=agentgateway-standalone \
+          BENCHMARK_CAMPAIGN_ID=ci-regression \
+          BENCHMARK_CLUSTER_PROVIDER=kind \
+          ./inference/run-benchmark.sh
+
+      - name: Check regression - Service treatment
+        run: |
+          REPORT_PATH="$(find inference/suites/llm-d-benchmark/workspace-service -name 'benchmark_report_v0.2*.yaml' 2>/dev/null | sort | tail -1)"
+          python3 regression/check_regression.py \
+            --report "${REPORT_PATH}" \
+            --baseline regression/baselines/service-decode-only.json \
+            --threshold "${{ inputs.threshold }}"
+
+      - name: Check regression - Agentgateway Standalone treatment
+        run: |
+          REPORT_PATH="$(find inference/suites/llm-d-benchmark/workspace-agentgateway-standalone -name 'benchmark_report_v0.2*.yaml' 2>/dev/null | sort | tail -1)"
+          python3 regression/check_regression.py \
+            --report "${REPORT_PATH}" \
+            --baseline regression/baselines/agentgateway-standalone-decode-only.json \
+            --threshold "${{ inputs.threshold }}"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: benchmark-results
+          path: inference/reports/
+          retention-days: 14
+
+      - name: Teardown kind cluster
+        if: always()
+        run: kind delete cluster --name "${CLUSTER_NAME}"

@@ -1,0 +1,7 @@
+{
+  "scenario": "agentgateway-standalone-decode-only",
+  "p99_request_latency_s": 0.018012344679928002,
+  "metric_path": "results.request_performance.aggregate.latency.request_latency.p99",
+  "source_report": "demo/agentgateway-report.yaml",
+  "recorded_at": "2026-08-14T15:25:58.582782+00:00"
+}
