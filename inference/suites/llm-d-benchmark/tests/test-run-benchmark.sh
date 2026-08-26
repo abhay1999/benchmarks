@@ -58,6 +58,16 @@ BENCHMARK_REPETITION=3 bash -c '
   [[ "$SPEC_DIR" == */.work/agentgateway-gateway/repetition-3 ]]
 ' _ "${RUNNER}"
 
+BENCHMARK_TREATMENT=agentgateway-gateway \
+BENCHMARK_CAMPAIGN_ID=test-smoke \
+BENCHMARK_CLUSTER_PROVIDER=gke \
+BENCHMARK_ACCELERATOR_TYPE=gpu \
+BENCHMARK_BACKEND_TYPE=vllm \
+BENCHMARK_REFERENCE_PROFILE=smoke-gpu bash -c '
+  source "$1"
+  validate_configuration
+' _ "${RUNNER}"
+
 echo "campaign treatment tests passed"
 
 ENDPOINT_TEST_DIR="$(mktemp -d)"
@@ -204,6 +214,57 @@ BENCHMARK_CLUSTER_PROVIDER=gke bash -c '
 ' _ "${RUNNER}"
 
 echo "storage cleanup no-op tests passed"
+
+BENCHMARK_CLUSTER_PROVIDER=gke BENCHMARK_HF_TOKEN_REQUIRED=false bash -c '
+  source "$1"
+  kubectl() { return 1; }
+  load_hf_token_from_cluster
+' _ "${RUNNER}"
+
+if BENCHMARK_CLUSTER_PROVIDER=gke BENCHMARK_HF_TOKEN_REQUIRED=true bash -c '
+  source "$1"
+  kubectl() { return 1; }
+  load_hf_token_from_cluster
+' _ "${RUNNER}"; then
+  echo "required missing HF token was unexpectedly accepted" >&2
+  exit 1
+fi
+
+echo "optional public-model HF token tests passed"
+
+homebrew_test_dir="$(mktemp -d)"
+mkdir -p "${homebrew_test_dir}/opt/homebrew/bin" \
+  "${homebrew_test_dir}/opt/homebrew/sbin" \
+  "${homebrew_test_dir}/usr/local/bin"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s/opt/homebrew"\n' \
+  "${homebrew_test_dir}" > "${homebrew_test_dir}/usr/local/bin/brew"
+chmod +x "${homebrew_test_dir}/usr/local/bin/brew"
+PATH="${homebrew_test_dir}/usr/local/bin:$homebrew_test_dir/opt/homebrew/bin:/usr/bin:/bin" bash -c '
+  source "$1"
+  prefer_homebrew_tools
+  [[ "$PATH" == "$2/opt/homebrew/bin:$2/opt/homebrew/sbin:"* ]]
+' _ "${RUNNER}" "${homebrew_test_dir}"
+rm -rf -- "${homebrew_test_dir:?}"
+
+echo "Homebrew tool precedence test passed"
+
+controller_test_dir="$(mktemp -d)"
+BENCHMARK_TREATMENT=agentgateway-gateway \
+BENCHMARK_KUBE_CONTEXT=test-context \
+AGW_CONTROLLER_NAMESPACE=agentgateway-system \
+AGW_VERSION=v1.4.1 \
+CONTROLLER_TEST_DIR="${controller_test_dir}" bash -c '
+  source "$1"
+  helm() { printf "%s\n" "$*" >> "$CONTROLLER_TEST_DIR/helm-calls"; }
+  kubectl() { printf "cr.agentgateway.dev/controller:v1.4.1"; }
+  ensure_agentgateway_gateway_controller
+  sed -n "1p" "$CONTROLLER_TEST_DIR/helm-calls" | grep -Fq "agentgateway-crds"
+  sed -n "1p" "$CONTROLLER_TEST_DIR/helm-calls" | grep -Fq -- "--take-ownership"
+  sed -n "2p" "$CONTROLLER_TEST_DIR/helm-calls" | grep -Fq "charts/agentgateway "
+' _ "${RUNNER}"
+rm -rf -- "${controller_test_dir:?}"
+
+echo "agentgateway CRD/controller reconciliation test passed"
 
 BENCHMARK_ROUTING_POLICY=optimized-baseline bash -c '
   source "$1"

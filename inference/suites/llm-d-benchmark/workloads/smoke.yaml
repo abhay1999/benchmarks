@@ -1,0 +1,46 @@
+# Short, deterministic workload for validating deployment, routing, evidence,
+# and cleanup. It is intentionally unsuitable for performance comparisons.
+load:
+  type: constant
+  interval: 1.0
+  base_seed: 42
+  stages:
+    - rate: 1
+      duration: 20
+    - rate: 2
+      duration: 20
+  request_timeout: 60
+api:
+  type: completion
+  streaming: true
+server:
+  type: vllm
+  model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+data:
+  type: random
+  input_distribution:
+    type: normal
+    min: 32
+    max: 64
+    mean: 48
+    std_dev: 4
+    total_count: 100
+  output_distribution:
+    type: normal
+    min: 8
+    max: 24
+    mean: 16
+    std_dev: 2
+    total_count: 100
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace

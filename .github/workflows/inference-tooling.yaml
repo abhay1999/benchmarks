@@ -44,6 +44,7 @@ jobs:
         run: |
           bash inference/provisioning/gke/tests/test-provisioning.sh
           bash inference/provisioning/gke/tests/test-run-gke-campaign.sh
+          bash inference/provisioning/gke/tests/test-run-gke-smoke.sh
           bash inference/suites/llm-d-benchmark/tests/test-cleanup-gke-campaign.sh
           bash inference/suites/llm-d-benchmark/tests/test-run-benchmark.sh
 

@@ -6,3 +6,9 @@ scenario:
     prefill:
       enabled: false
       replicas: 0
+    # The decode-only topology does not need llm-d's prefill/decode routing
+    # sidecar. Disabling it also keeps the comparison independent of the
+    # modelservice chart's sidecar CLI, which evolves with llm-d-router.
+    routing:
+      proxy:
+        enabled: false

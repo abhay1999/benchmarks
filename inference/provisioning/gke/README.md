@@ -78,6 +78,11 @@ campaign is ready to start:
 make benchmark-gke-gpu-up
 ```
 
+For a low-cost end-to-end validation, use `make benchmark-gke-smoke-sim`
+first. `make benchmark-gke-smoke-all` gates a one-node Spot GPU smoke test on
+successful simulator evidence validation and always returns the GPU pool to
+zero.
+
 The scale command waits for every node and the expected number of allocatable
 accelerators. If scale-up is rejected or does not complete before
 `BENCHMARK_GKE_GPU_READY_TIMEOUT`, it requests a rollback to zero and fails.

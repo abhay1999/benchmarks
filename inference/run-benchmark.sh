@@ -19,8 +19,8 @@
 # BENCHMARK_ROUTER_CHART_VERSION (immutable standalone chart; default: v0.9.0),
 # BENCHMARK_ROUTING_POLICY (default, optimized-baseline, cache-only, or
 # load-only; default: default),
-# BENCHMARK_REFERENCE_PROFILE (empty or
-# optimized-baseline-qwen3-32b-h100-v0.9; default: empty),
+# BENCHMARK_REFERENCE_PROFILE (empty, smoke-gpu, or an optimized-baseline
+# reference in inference/suites/llm-d-benchmark/references; default: empty),
 # BENCHMARK_ENDPOINT_PATH (internal or external; default: internal),
 # BENCHMARK_SCENARIO (default: agentgateway-comparison),
 # BENCHMARK_KUBE_CONTEXT (required for GKE),
@@ -48,6 +48,7 @@
 # BENCHMARK_GKE_GPU_ACCELERATOR_TYPE (default: nvidia-h100-80gb),
 # BENCHMARK_SECRET_NAMESPACE and BENCHMARK_HF_SECRET_NAME (GKE defaults:
 # benchmark-secrets and llm-d-hf-token),
+# BENCHMARK_HF_TOKEN_REQUIRED (require that GKE Secret; default: true),
 # CLUSTER_NAME (default: agentgateway-benchmark; kind only),
 # AGTW_BENCHMARKING_DIR (suite input override; defaults to the selected suite),
 # LLM_D_BENCHMARK_REF (default: main - branch, tag, or commit),
@@ -113,6 +114,7 @@ GKE_GPU_NODEPOOL="${BENCHMARK_GKE_GPU_NODEPOOL:-gpu-h100}"
 GKE_CLEANUP_TIMEOUT="${BENCHMARK_GKE_CLEANUP_TIMEOUT:-1200}"
 BENCHMARK_SECRET_NAMESPACE="${BENCHMARK_SECRET_NAMESPACE:-benchmark-secrets}"
 BENCHMARK_HF_SECRET_NAME="${BENCHMARK_HF_SECRET_NAME:-llm-d-hf-token}"
+HF_TOKEN_REQUIRED="${BENCHMARK_HF_TOKEN_REQUIRED:-true}"
 
 MODEL="${BENCHMARK_MODEL:-Qwen/Qwen3-32B}"
 REPLICAS="${BENCHMARK_REPLICAS:-2}"
@@ -303,9 +305,17 @@ acquire_campaign_lock() {
 
 load_hf_token_from_cluster() {
   [[ "${BENCHMARK_CLUSTER_PROVIDER}" == "gke" && -z "${HF_TOKEN:-}" ]] || return 0
-  HF_TOKEN="$(kubectl get secret "${BENCHMARK_HF_SECRET_NAME}" \
-    --namespace "${BENCHMARK_SECRET_NAMESPACE}" \
-    --template='{{index .data "HF_TOKEN" | base64decode}}')"
+  if ! HF_TOKEN="$(kubectl get secret "${BENCHMARK_HF_SECRET_NAME}" \
+      --namespace "${BENCHMARK_SECRET_NAMESPACE}" \
+      --template='{{index .data "HF_TOKEN" | base64decode}}' 2>/dev/null)"; then
+    unset HF_TOKEN
+    if [[ "${HF_TOKEN_REQUIRED}" == true ]]; then
+      log "required Secret ${BENCHMARK_SECRET_NAMESPACE}/${BENCHMARK_HF_SECRET_NAME} was not found"
+      return 1
+    fi
+    log "HF token is optional for this public-model run; continuing unauthenticated"
+    return 0
+  fi
   [[ "${HF_TOKEN}" == hf_* ]] || {
     unset HF_TOKEN
     log "${BENCHMARK_SECRET_NAMESPACE}/${BENCHMARK_HF_SECRET_NAME} does not contain a valid HF_TOKEN"
@@ -337,7 +347,9 @@ ensure_benchmark_namespace() {
   kubectl annotate namespace "${SCENARIO_NAME}" \
     benchmark.agentgateway.dev/campaign-id="${BENCHMARK_CAMPAIGN_ID}" \
     --overwrite >/dev/null
-  if [[ "${BENCHMARK_CLUSTER_PROVIDER}" == "gke" ]]; then
+  if [[ "${BENCHMARK_CLUSTER_PROVIDER}" == "gke" ]] && \
+      kubectl get secret "${BENCHMARK_HF_SECRET_NAME}" \
+        --namespace "${BENCHMARK_SECRET_NAMESPACE}" >/dev/null 2>&1; then
     # Keep the credential in the cluster's dedicated secret namespace. Copy
     # the opaque Secret object without decoding or printing its token so each
     # independently named benchmark namespace can authenticate model access.
@@ -363,6 +375,10 @@ PY
     kubectl apply -f "${copied_secret}" >/dev/null
     rm -f -- "${secret_json}" "${copied_secret}"
     log "copied ${BENCHMARK_SECRET_NAMESPACE}/${BENCHMARK_HF_SECRET_NAME} to ${SCENARIO_NAME}"
+  elif [[ "${BENCHMARK_CLUSTER_PROVIDER}" == "gke" && \
+          "${HF_TOKEN_REQUIRED}" == true ]]; then
+    log "required Secret ${BENCHMARK_SECRET_NAMESPACE}/${BENCHMARK_HF_SECRET_NAME} was not found"
+    return 1
   fi
 }
 
@@ -501,7 +517,7 @@ validate_configuration() {
     *) log "unsupported BENCHMARK_ROUTING_POLICY: ${BENCHMARK_ROUTING_POLICY}"; return 2 ;;
   esac
   case "${BENCHMARK_REFERENCE_PROFILE}" in
-    ""|optimized-baseline-qwen3-32b-h100-v0.9|optimized-baseline-qwen3-32b-h100-v0.9-vllm-v0.27.1) ;;
+    ""|smoke-gpu|optimized-baseline-qwen3-32b-h100-v0.9|optimized-baseline-qwen3-32b-h100-v0.9-vllm-v0.27.1) ;;
     *) log "unsupported BENCHMARK_REFERENCE_PROFILE: ${BENCHMARK_REFERENCE_PROFILE}"; return 2 ;;
   esac
   case "${BENCHMARK_ENDPOINT_PATH}" in
@@ -618,6 +634,7 @@ validate_configuration() {
   case "${RUNTIME_METRICS_ENABLED}" in true|false) ;; *) log "BENCHMARK_RUNTIME_METRICS must be true or false"; return 2 ;; esac
   case "${GKE_MONITORING_MODE}" in auto|required|off) ;; *) log "BENCHMARK_GKE_MONITORING must be auto, required, or off"; return 2 ;; esac
   case "${FAST_COLLECT}" in true|false) ;; *) log "BENCHMARK_FAST_COLLECT must be true or false"; return 2 ;; esac
+  case "${HF_TOKEN_REQUIRED}" in true|false) ;; *) log "BENCHMARK_HF_TOKEN_REQUIRED must be true or false"; return 2 ;; esac
   case "${GPU_RELEASE_POLICY}" in never|after-run|after-load) ;; *) log "BENCHMARK_GPU_RELEASE_POLICY must be never, after-run, or after-load"; return 2 ;; esac
   if [[ "${GPU_RELEASE_POLICY}" != "never" && \
       "${BENCHMARK_CLUSTER_PROVIDER}/${BENCHMARK_ACCELERATOR_TYPE}" != "gke/gpu" ]]; then
@@ -734,18 +751,29 @@ configure_provider() {
       log "GPU acceleration needs ${required_gpus} allocatable ${GKE_ACCELERATOR} GPUs, but only ${available_gpus} were found"
       return 1
     fi
-    storage_class="${MODEL_STORAGE_CLASS:-standard-rwx}"
-    kubectl get storageclass "${storage_class}" >/dev/null || {
-      log "GPU acceleration needs model storage class ${storage_class}; enable the GKE Filestore CSI driver or set BENCHMARK_MODEL_STORAGE_CLASS"
-      return 1
-    }
+    if [[ "${BENCHMARK_REFERENCE_PROFILE}" == smoke-gpu ]]; then
+      # The smoke profile has vLLM fetch its small public model directly and
+      # intentionally creates no model PVC or Filestore instance.
+      storage_class=standard-rwo
+      kubectl get storageclass "${storage_class}" >/dev/null || {
+        log "GPU smoke testing needs workload storage class ${storage_class}"
+        return 1
+      }
+    else
+      storage_class="${MODEL_STORAGE_CLASS:-standard-rwx}"
+      kubectl get storageclass "${storage_class}" >/dev/null || {
+        log "GPU acceleration needs model storage class ${storage_class}; enable the GKE Filestore CSI driver or set BENCHMARK_MODEL_STORAGE_CLASS"
+        return 1
+      }
+    fi
     if [[ -n "${WORKLOAD_STORAGE_CLASS}" ]]; then
       kubectl get storageclass "${WORKLOAD_STORAGE_CLASS}" >/dev/null || {
         log "workload storage class ${WORKLOAD_STORAGE_CLASS} does not exist"
         return 1
       }
     fi
-    if [[ "${storage_class}" == "standard-rwx" ]]; then
+    if [[ "${BENCHMARK_REFERENCE_PROFILE}" != smoke-gpu && \
+        "${storage_class}" == "standard-rwx" ]]; then
       log "warning: standard-rwx is Basic HDD Filestore (~100 MiB/s at 1 TiB); concurrent TP workers can make Qwen3-32B startup take about 50 minutes"
       log "use BENCHMARK_MODEL_STORAGE_PROFILE=high-throughput-shared for substantially faster cold starts"
     fi
@@ -800,7 +828,23 @@ ensure_helm_diff_compatibility() {
 # handles all of that correctly, including cases plain `pip install -e .`
 # doesn't (planner isn't pulled in by that alone, and macOS's system python3
 # is usually too old for llm-d-benchmark's >=3.11 requirement).
+prefer_homebrew_tools() {
+  command -v brew >/dev/null 2>&1 || return 0
+
+  local brew_prefix
+  brew_prefix="$(brew --prefix)" || return 0
+  [[ -d "${brew_prefix}/bin" ]] || return 0
+
+  # llm-d-benchmark's installer upgrades Homebrew-managed dependencies. Keep
+  # those binaries ahead of stale /usr/local copies for both installation and
+  # the benchmark phases which follow it.
+  PATH="${brew_prefix}/bin:${brew_prefix}/sbin:${PATH}"
+  export PATH
+}
+
 ensure_llm_d_benchmark() {
+  prefer_homebrew_tools
+
   if [[ -n "${LLM_D_BENCHMARK_DIR:-}" ]]; then
     log "using existing llm-d-benchmark checkout at ${LLM_D_BENCHMARK_DIR}"
   else
@@ -1297,8 +1341,14 @@ ensure_agentgateway_gateway_controller() {
 
   # llm-d-benchmark treats the presence of agentgateway CRDs as sufficient and
   # can therefore leave an older controller installed. Reconcile the requested
-  # release before standup so the controller and its generated proxy are an
-  # intentional, reproducible pair.
+  # release before standup so the CRDs, controller, and generated proxy are an
+  # intentional, reproducible set. Agentgateway publishes its CRDs separately;
+  # the controller never becomes ready when only the main chart is installed.
+  helm upgrade --install agentgateway-crds \
+    oci://cr.agentgateway.dev/charts/agentgateway-crds \
+    --kube-context "${BENCHMARK_KUBE_CONTEXT}" \
+    --namespace "${AGW_CONTROLLER_NAMESPACE}" --create-namespace \
+    --version "${AGW_VERSION}" --take-ownership --wait --timeout 5m >/dev/null
   helm upgrade --install agentgateway \
     oci://cr.agentgateway.dev/charts/agentgateway \
     --kube-context "${BENCHMARK_KUBE_CONTEXT}" \

@@ -93,6 +93,44 @@ The Kind provider is the default. It always imports the selected agentgateway
 image archive into the cluster so a mutable local tag cannot silently reuse an
 older node image.
 
+## GKE smoke campaigns
+
+Use the smoke targets to validate provisioning, Gateway API routing, EPP,
+agentgateway, inference-perf, evidence collection, and cleanup before paying
+for a full campaign:
+
+```bash
+# Safe first phase: the provisioned GPU pool remains at zero.
+BENCHMARK_GKE_PROJECT=<project> make benchmark-gke-smoke-sim
+
+# Explicitly billable: one Spot a3-highgpu-2g node and a small vLLM model.
+BENCHMARK_GKE_PROJECT=<project> make benchmark-gke-smoke-gpu
+
+# Run the GPU phase only after simulator evidence validation succeeds.
+BENCHMARK_GKE_PROJECT=<project> make benchmark-gke-smoke-all
+```
+
+The checked-in smoke workload uses two 20-second constant-load stages at 1 and
+2 QPS. The simulator phase uses one inference-sim replica. The GPU phase uses
+one `facebook/opt-125m` vLLM replica on one Spot node and releases the GPU pool
+immediately after traffic completes. It is an end-to-end validation workload,
+not a performance result.
+
+The smoke model is public. The smoke orchestrator uses the configured shared
+HF Secret when present, creates it from `HF_TOKEN` when supplied, and otherwise
+continues unauthenticated. Normal GKE campaigns still require the Secret by
+default; only the smoke path sets `BENCHMARK_HF_TOKEN_REQUIRED=false`.
+
+Each phase receives a separate campaign ID because simulator and GPU results
+are not comparable. The verifier requires successful stage reports,
+per-request evidence, runtime metrics, and—for the GPU phase—after-load release
+evidence. Any failure or interruption runs the campaign finalizer and returns
+the GPU pool to zero. `BENCHMARK_GKE_CLUSTER_LIFECYCLE=destroy` additionally
+removes the provisioner-owned cluster after cleanup; `retain` is the default.
+
+These single-treatment campaigns do not generate comparison Markdown or PNG
+reports. A comparison report still requires two compatible treatments.
+
 ## Published optimized-baseline profile
 
 Use the upstream workload variant when producing a report comparable to the
