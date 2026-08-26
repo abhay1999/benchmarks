@@ -60,18 +60,10 @@ campaign identity differs from existing runs.
 
 ## Local simulator example
 
-### Prerequisites
-
 `make benchmark` creates the Kind cluster when it does not already exist. The
-`service` and standalone treatments do not require Gateway API CRDs. Install
-the Gateway API and Inference Extension CRDs before running
-`agentgateway-gateway`:
-
-```bash
-make kind-create
-make gw-api-crds
-make gie-crds
-```
+llm-d-benchmark standup installs the Gateway API and Inference Extension
+prerequisites needed by `agentgateway-gateway`. Service and standalone
+treatments do not install or require them.
 
 Run the Service treatment:
 

@@ -57,8 +57,9 @@ jobs:
 
       - name: Check standalone-repository references
         run: |
-          if git grep -n -E 'make -C controller|\.\./inference' \
-              -- README.md inference; then
-            echo "found a stale agentgateway repository path" >&2
+          if git grep -n -E \
+              'make -C controller|\.\./inference|gw-api-crds|gie-crds|CONFORMANCE_(CHANNEL|VERSION)' \
+              -- Makefile README.md inference; then
+            echo "found a stale standalone-repository reference" >&2
             exit 1
           fi

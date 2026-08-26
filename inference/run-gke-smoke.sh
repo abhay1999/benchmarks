@@ -239,7 +239,6 @@ main() {
     trap 'exit 130' INT
     trap 'exit 143' TERM
   fi
-  run_make KUBE_CONTEXT="${BENCHMARK_KUBE_CONTEXT}" gw-api-crds gie-crds
   ensure_hf_secret
 
   if [[ "${mode}" == sim || "${mode}" == all ]]; then

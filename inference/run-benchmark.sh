@@ -1339,11 +1339,12 @@ EOF
 ensure_agentgateway_gateway_controller() {
   [[ "${BENCHMARK_TREATMENT}" == "agentgateway-gateway" ]] || return 0
 
-  # llm-d-benchmark treats the presence of agentgateway CRDs as sufficient and
-  # can therefore leave an older controller installed. Reconcile the requested
-  # release before standup so the CRDs, controller, and generated proxy are an
-  # intentional, reproducible set. Agentgateway publishes its CRDs separately;
-  # the controller never becomes ready when only the main chart is installed.
+  # llm-d-benchmark standup owns Gateway API and Inference Extension
+  # prerequisites. Reconcile the requested agentgateway release afterward so
+  # its CRDs, controller, and generated proxy are a reproducible set rather
+  # than maintaining a second set of prerequisite installers in this wrapper.
+  # Agentgateway publishes its own CRDs separately; the controller never
+  # becomes ready when only the main chart is installed.
   helm upgrade --install agentgateway-crds \
     oci://cr.agentgateway.dev/charts/agentgateway-crds \
     --kube-context "${BENCHMARK_KUBE_CONTEXT}" \
@@ -2689,8 +2690,8 @@ PY
   log "running ${TREATMENT_ID}: ${BENCHMARK_ACCELERATOR_TYPE}/${BENCHMARK_BACKEND_TYPE} on ${BENCHMARK_CLUSTER_PROVIDER}"
   log "standup: ${TREATMENT_ID} (${SCENARIO_NAME})"
   TREATMENT_ACTIVE=true
-  ensure_agentgateway_gateway_controller
   prepare_treatment
+  ensure_agentgateway_gateway_controller
   configure_agentgateway_gateway_image
   configure_gke_monitoring
   log "smoketest: ${TREATMENT_ID} (${SCENARIO_NAME})"
