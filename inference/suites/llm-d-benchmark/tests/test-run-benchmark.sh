@@ -68,6 +68,8 @@ LLM_D_BENCHMARK_DIR="${ENDPOINT_TEST_DIR}" bash -c '
   SCENARIO_NAME=test-standalone
   BENCHMARK_TREATMENT=agentgateway-standalone
   kubectl() {
+    [[ " $* " == *" get service --namespace test-standalone "* ]]
+    [[ " $* " != *gateway* ]]
     cat <<"JSON"
 {"items":[
   {"kind":"Service","metadata":{"name":"model-router-epp"},"spec":{"clusterIP":"10.0.0.9","ports":[{"name":"http","port":80}]}},
@@ -80,6 +82,28 @@ JSON
 rm -r -- "${ENDPOINT_TEST_DIR:?}"
 
 echo "standalone internal endpoint test passed"
+
+ENDPOINT_TEST_DIR="$(mktemp -d)"
+mkdir -p "${ENDPOINT_TEST_DIR}/.venv/bin"
+ln -s "$(command -v python3)" "${ENDPOINT_TEST_DIR}/.venv/bin/python"
+LLM_D_BENCHMARK_DIR="${ENDPOINT_TEST_DIR}" bash -c '
+  source "$1"
+  SCENARIO_NAME=test-gateway
+  BENCHMARK_TREATMENT=agentgateway-gateway
+  kubectl() {
+    [[ " $* " == *" get service,gateway --namespace test-gateway "* ]]
+    cat <<"JSON"
+{"items":[
+  {"kind":"Gateway","metadata":{"name":"agentgateway"}},
+  {"kind":"Service","metadata":{"name":"agentgateway-proxy","labels":{"gateway.networking.k8s.io/gateway-name":"agentgateway"}},"spec":{"clusterIP":"10.0.0.11","ports":[{"name":"http","port":80}]}}
+]}
+JSON
+  }
+  [[ "$(resolve_internal_endpoint)" == "http://10.0.0.11:80" ]]
+' _ "${RUNNER}"
+rm -r -- "${ENDPOINT_TEST_DIR:?}"
+
+echo "gateway internal endpoint test passed"
 
 BENCHMARK_CLUSTER_PROVIDER=gke \
 BENCHMARK_CAMPAIGN_ID=test-campaign \

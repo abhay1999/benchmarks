@@ -36,7 +36,7 @@ changes IAM bindings.
 By default, an IAM administrator must create
 `agentgateway-benchmark-nodes@<project>.iam.gserviceaccount.com`, grant it
 `roles/container.defaultNodeServiceAccount` and
-`roles/artifactregistry.reader`, and grant the human or CI provisioning
+`roles/artifactregistry.reader`, and grant the provisioning
 principal `roles/iam.serviceAccountUser` on that account. The `plan` and
 `apply` operations validate the node account and its project roles before
 creating GKE resources.
@@ -47,19 +47,19 @@ Compute Engine default service account, opt in explicitly:
 ```bash
 BENCHMARK_GKE_NODE_SERVICE_ACCOUNT=default \
 BENCHMARK_GKE_PROJECT=<project> \
-make -C controller benchmark-gke-provision
+make benchmark-gke-provision
 ```
 
 The default Compute Engine account is often broadly privileged, so a dedicated
-account is preferred for CI.
+account is preferred.
 
 Set the project explicitly. Review the plan before applying it:
 
 ```bash
 export BENCHMARK_GKE_PROJECT=<project>
 
-make -C controller benchmark-gke-plan
-make -C controller benchmark-gke-provision
+make benchmark-gke-plan
+make benchmark-gke-provision
 ```
 
 Successful verification prints the provider, context, node-pool, and hardware
@@ -75,7 +75,7 @@ Provisioning creates the GPU node pool at zero nodes. Scale it only when a
 campaign is ready to start:
 
 ```bash
-make -C controller benchmark-gke-gpu-up
+make benchmark-gke-gpu-up
 ```
 
 The scale command waits for every node and the expected number of allocatable
@@ -85,7 +85,7 @@ accelerators. If scale-up is rejected or does not complete before
 Release GPU capacity explicitly or through the campaign finalizer:
 
 ```bash
-make -C controller benchmark-gke-gpu-down
+make benchmark-gke-gpu-down
 ```
 
 Destroying the persistent infrastructure is a separate guarded operation. It
@@ -93,7 +93,7 @@ refuses to run while benchmark namespaces, persistent volumes, or LoadBalancer
 Services remain:
 
 ```bash
-make -C controller benchmark-gke-destroy
+make benchmark-gke-destroy
 ```
 
 The explicitly destructive Make target supplies the confirmation guard. A
@@ -103,19 +103,19 @@ direct invocation of `destroy.sh` still requires
 The project APIs, IAM bindings, service accounts, network, and subnetwork are
 treated as shared project infrastructure and are not removed.
 
-The complete three-treatment workflow can use the provisioner as ephemeral CI
-infrastructure. In this mode its unconditional finalizer cleans campaign cloud
+The complete three-treatment workflow can use ephemeral infrastructure. In
+this mode its unconditional finalizer cleans campaign cloud
 storage, scales down the GPU pool, and deletes the cluster and its CPU and GPU
 node pools:
 
 ```bash
 BENCHMARK_GKE_PROJECT=<project> \
 BENCHMARK_GKE_CLUSTER_LIFECYCLE=destroy \
-make -C controller benchmark-gke-all
+make benchmark-gke-all
 ```
 
-`retain` is the default lifecycle. Cluster destruction is never inferred from
-CI detection; it must be selected explicitly.
+`retain` is the default lifecycle. Cluster destruction must be selected
+explicitly.
 
 ## Configuration
 

@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAMPAIGN_SCRIPT="$(cd "${SCRIPT_DIR}/../../.." && pwd)/run-gke-campaign.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf -- "${TEMP_DIR}"' EXIT
 mkdir -p "${TEMP_DIR}/bin"
@@ -11,6 +12,8 @@ mkdir -p "${TEMP_DIR}/bin"
 cat >"${TEMP_DIR}/bin/make" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ "$1" == -C ]]
+[[ "$2" == "${TEST_REPO_ROOT}" ]]
 target="${!#}"
 printf 'target=%s treatment=%s campaign=%s comparisons=%s\n' \
   "${target}" "${BENCHMARK_TREATMENT:-}" "${BENCHMARK_CAMPAIGN_ID:-}" \
@@ -47,6 +50,7 @@ EOF
 chmod +x "${TEMP_DIR}/bin/make" "${TEMP_DIR}/bin/kubectl"
 export PATH="${TEMP_DIR}/bin:/usr/bin:/bin"
 export BENCHMARK_MAKE_BIN="${TEMP_DIR}/bin/make"
+export TEST_REPO_ROOT="${REPO_ROOT}"
 export BENCHMARK_GKE_PROJECT=test-project
 export BENCHMARK_GKE_NODE_SERVICE_ACCOUNT=default
 export TEST_COMMAND_LOG="${TEMP_DIR}/commands.log"

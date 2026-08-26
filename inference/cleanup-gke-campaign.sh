@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Clean resources owned by one GKE inference benchmark campaign and always
-# scale its GPU node pool to zero. Intended for an unconditional CI finalizer.
+# scale its GPU node pool to zero. Intended for an unconditional finalizer.
 
 set -uo pipefail
 

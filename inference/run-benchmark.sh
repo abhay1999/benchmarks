@@ -689,7 +689,7 @@ validate_configuration() {
 configure_provider() {
   if [[ "${BENCHMARK_CLUSTER_PROVIDER}" == "kind" ]]; then
     kind get clusters | grep -Fxq "${CLUSTER_NAME}" || {
-      log "kind cluster ${CLUSTER_NAME} does not exist; create it first or use make -C controller benchmark"
+      log "kind cluster ${CLUSTER_NAME} does not exist; create it first or use make benchmark"
       return 1
     }
     PROVIDER_KUBECONFIG="$(mktemp "${TMPDIR:-/tmp}/agentgateway-kubeconfig.XXXXXX")"
@@ -821,8 +821,8 @@ ensure_llm_d_benchmark() {
     # version check. --uv lets install.sh download and use a real 3.11+
     # itself instead of failing on whatever `python3` happens to resolve to.
     # Force the checkout-local venv even if the caller has another environment
-    # active. CI/noninteractive settings and closed stdin make unexpected
-    # prompts fail instead of hanging a CI job. Homebrew may otherwise update
+    # active. Noninteractive settings and closed stdin make unexpected prompts
+    # fail immediately. Homebrew may otherwise update
     # itself and formula metadata implicitly before install/upgrade commands.
     log "running llm-d-benchmark's install.sh"
     (
@@ -1089,9 +1089,12 @@ EOF
 # a GKE LoadBalancer Service. Passing this URL to the run phase keeps the
 # measured path inside the cluster and matches the upstream published runs.
 resolve_internal_endpoint() {
-  local resources
+  local resources resource_types=service
+  if [[ "${BENCHMARK_TREATMENT}" == "agentgateway-gateway" ]]; then
+    resource_types=service,gateway
+  fi
   resources="$(mktemp "${TMPDIR:-/tmp}/agentgateway-endpoints.XXXXXX.json")"
-  kubectl get service,gateway --namespace "${SCENARIO_NAME}" -o json \
+  kubectl get "${resource_types}" --namespace "${SCENARIO_NAME}" -o json \
     > "${resources}"
   "${LLM_D_BENCHMARK_DIR}/.venv/bin/python" - \
       "${resources}" "${BENCHMARK_TREATMENT}" <<'PY'
@@ -2297,7 +2300,7 @@ write_prism_supporting_artifacts() {
     }
     # The upstream Qwen3-32B sweep can produce a 15+ GiB JSON document.
     # Preserve every request losslessly, but compress it so three-treatment
-    # campaigns and their CI artifacts do not require tens of GiB each.
+    # campaigns and their retained artifacts do not require tens of GiB each.
     gzip -c "${per_request_source}" > "${per_request_archive}"
     gzip -t "${per_request_archive}"
   fi

@@ -5,6 +5,10 @@ retains their native evidence in a shared campaign, and generates publishable
 Markdown, PNG, and CSV comparisons. Prism-compatible Benchmark Report v0.2
 documents remain available in each treatment's evidence bundle.
 
+PR #1 intentionally migrates tooling only. Curated reports from the original
+agentgateway repository change are not part of this migration and will be
+published separately with their supporting evidence.
+
 ## Layout
 
 ```text
@@ -23,7 +27,7 @@ inference/
     common/
     tests/
     generate.py
-  results/                 # ignored local and CI campaign data
+  results/                 # ignored local campaign data
   reports/                 # curated reports suitable for committing
 ```
 
@@ -58,15 +62,15 @@ campaign identity differs from existing runs.
 
 ### Prerequisites
 
-Install the Gateway API CRDs on the cluster first (`make kind-create` creates
-the cluster if it doesn't already exist). The CRDs are required even for the
-`service` treatment: `run-benchmark.sh` resolves its internal endpoint with
-`kubectl get service,gateway`, which fails if the `gateway` resource type
-isn't registered on the cluster.
+`make benchmark` creates the Kind cluster when it does not already exist. The
+`service` and standalone treatments do not require Gateway API CRDs. Install
+the Gateway API and Inference Extension CRDs before running
+`agentgateway-gateway`:
 
 ```bash
 make kind-create
 make gw-api-crds
+make gie-crds
 ```
 
 Run the Service treatment:
@@ -222,7 +226,7 @@ inference/results/llm-d-benchmark/<campaign-id>/generated/
 Set `BENCHMARK_CAMPAIGN_ID` before invoking the target when a stable identifier
 is required.
 
-For an ephemeral CI environment, request cluster destruction explicitly:
+For an ephemeral cluster, request destruction explicitly:
 
 ```bash
 BENCHMARK_GKE_PROJECT=your-gcp-project \
@@ -233,13 +237,12 @@ make benchmark-gke-all
 The `destroy` lifecycle arms the finalizer before provisioning so a partial
 provisioning failure is covered. After campaign cleanup succeeds, it deletes
 the provisioner-owned cluster and all node pools and verifies that the cluster
-is absent. It fails the job rather than deleting the cluster when PVC, PV,
+is absent. It fails rather than deleting the cluster when PVC, PV,
 Filestore, LoadBalancer, or namespace cleanup cannot be verified. Shared
 project APIs, IAM, service accounts, networks, and subnetworks are retained.
 
-The one-command workflow is appropriate for manual runs and self-hosted CI
-with a sufficiently long job timeout. The sequential-job CI design described
-below remains preferable when the platform has a six-hour per-job limit.
+The one-command workflow is appropriate for unattended or manual runs. It can
+take several hours, depending on accelerator availability and model downloads.
 
 ### Equivalent manual GKE campaign
 
@@ -326,7 +329,7 @@ for treatment in service agentgateway-standalone agentgateway-gateway; do
   BENCHMARK_TREATMENT="${treatment}" make benchmark
 done
 
-export BENCHMARK_CAMPAIGN_DIR="../inference/results/llm-d-benchmark/${BENCHMARK_CAMPAIGN_ID}"
+export BENCHMARK_CAMPAIGN_DIR="inference/results/llm-d-benchmark/${BENCHMARK_CAMPAIGN_ID}"
 export BENCHMARK_COMPARISONS="service:agentgateway-standalone service:agentgateway-gateway"
 export BENCHMARK_REPORT_FORMATS=markdown,png,csv
 make benchmark-report
@@ -358,7 +361,7 @@ Set `BENCHMARK_REPETITION` to the round number. Restarting model-server pods
 between treatments clears runtime KV-cache state while the persistent model
 weight cache can remain populated.
 
-## CI duration and cost
+## Campaign duration and cost
 
 Plan for approximately 6-7 hours and USD 400-425 for one complete GKE
 campaign with the Service, standalone agentgateway, and agentgateway on
@@ -379,9 +382,8 @@ The measured campaign broke down as follows:
 The GPU allocation intervals include node-pool provisioning and deletion
 reconciliation. `after-load` releases the pool while inference-perf reporting,
 result collection, compression, and teardown continue on CPU nodes. H100 Spot
-capacity and model-download variability can increase the elapsed time, so CI
-should allow at least seven hours for the workflow even though each individual
-job should be shorter.
+capacity and model-download variability can increase the elapsed time. Allow
+at least seven hours for the complete workflow.
 
 An indicative per-campaign cost breakdown is:
 
@@ -392,7 +394,6 @@ An indicative per-campaign cost breakdown is:
 | `e2-standard-32` and `e2-standard-4` CPU nodes for six hours | About 7.25 |
 | GKE management | At most 0.60 |
 | Result-transfer network egress | 5-7 |
-| GitHub 4-core larger runner for six hours | About 4.32 |
 | **Estimated total** | **400-425** |
 
 The estimate uses the us-central1 Spot price observed on 2026-08-13 of
@@ -403,22 +404,11 @@ not a billing quote. See the Google Cloud
 [Filestore](https://cloud.google.com/filestore/pricing), and
 [GKE](https://cloud.google.com/kubernetes-engine/pricing) pricing pages.
 
-A standard GitHub-hosted runner is not suitable for the entire campaign. A
-single job is too close to GitHub's six-hour job limit, and each treatment
-temporarily needs about 17 GiB of local space while collecting its raw
-per-request results. Use sequential jobs for the three treatments followed by
-a report-generation job, all protected by the same concurrency group. A
-4-core larger Linux runner provides 150 GiB of storage; a self-hosted runner
-with comparable free space is also sufficient. See GitHub's
-[Actions limits](https://docs.github.com/en/actions/reference/limits),
-[larger runner specifications](https://docs.github.com/en/actions/reference/runners/larger-runners),
-and [runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
-
-The three compressed per-request files total approximately 3 GiB. Store them
-in durable object storage, such as GCS, rather than depending on the GitHub
-Actions artifact quota. Reports and smaller evidence can remain workflow
-artifacts. `BENCHMARK_REPETITION=3` runs every treatment three times and should
-be budgeted at approximately 18 hours and USD 1,200 to 1,275.
+Each treatment temporarily needs about 17 GiB of local space while collecting
+raw per-request results. The three compressed per-request files total
+approximately 3 GiB, so copy long-lived evidence to durable object storage.
+`BENCHMARK_REPETITION=3` runs every treatment three times and should be
+budgeted at approximately 18 hours and USD 1,200 to 1,275.
 
 ## Results
 
@@ -447,7 +437,7 @@ per-request results so percentiles can be independently audited.
 Generate the two Service comparisons after all treatments complete:
 
 ```bash
-BENCHMARK_CAMPAIGN_DIR=../inference/results/llm-d-benchmark/<campaign-id> \
+BENCHMARK_CAMPAIGN_DIR=inference/results/llm-d-benchmark/<campaign-id> \
 BENCHMARK_COMPARISONS='service:agentgateway-standalone service:agentgateway-gateway' \
 make benchmark-report
 ```
@@ -566,51 +556,17 @@ the same cluster until cleanup succeeds. With the default ephemeral cache
 policy, treatment teardown explicitly deletes its PVCs and waits for their PVs
 and Filestore instances to disappear.
 
-CI must still run the campaign finalizer unconditionally. It deletes any
-remaining resources owned by the campaign, verifies Filestore deletion, scales
-the configured GPU node pool to zero, verifies its managed instance groups and
-Kubernetes node count, and releases the campaign lock only after every check
-passes:
+Always run the campaign finalizer, including after interruption or failure. It
+deletes remaining campaign-owned resources, verifies Filestore deletion,
+scales the configured GPU node pool to zero, verifies its managed instance
+groups and Kubernetes node count, and releases the campaign lock only after
+every check passes:
 
-```yaml
-concurrency:
-  group: inference-benchmark-gke-${{ vars.BENCHMARK_GKE_CLUSTER }}
-  cancel-in-progress: false
-
-steps:
-  # Authenticate to Google Cloud without placing service-account keys in the
-  # repository, then reconcile the persistent infrastructure.
-  - name: Provision GKE benchmark infrastructure
-    env:
-      BENCHMARK_GKE_PROJECT: ${{ vars.BENCHMARK_GKE_PROJECT }}
-      BENCHMARK_GKE_LOCATION: ${{ vars.BENCHMARK_GKE_LOCATION }}
-      BENCHMARK_GKE_CLUSTER: ${{ vars.BENCHMARK_GKE_CLUSTER }}
-    run: make benchmark-gke-provision
-
-  - name: Acquire GPU capacity
-    env:
-      BENCHMARK_GKE_PROJECT: ${{ vars.BENCHMARK_GKE_PROJECT }}
-      BENCHMARK_GKE_LOCATION: ${{ vars.BENCHMARK_GKE_LOCATION }}
-      BENCHMARK_GKE_CLUSTER: ${{ vars.BENCHMARK_GKE_CLUSTER }}
-      BENCHMARK_GKE_GPU_NODEPOOL: ${{ vars.BENCHMARK_GKE_GPU_NODEPOOL }}
-    run: make benchmark-gke-gpu-up
-
-  # The treatment step follows. Keep the finalizer unconditional.
-
-  - name: Finalize GKE benchmark campaign
-    if: ${{ always() }}
-    env:
-      BENCHMARK_CAMPAIGN_ID: ${{ env.BENCHMARK_CAMPAIGN_ID }}
-      BENCHMARK_KUBE_CONTEXT: ${{ env.BENCHMARK_KUBE_CONTEXT }}
-      BENCHMARK_GKE_PROJECT: ${{ vars.BENCHMARK_GKE_PROJECT }}
-      BENCHMARK_GKE_LOCATION: ${{ vars.BENCHMARK_GKE_LOCATION }}
-      BENCHMARK_GKE_CLUSTER: ${{ vars.BENCHMARK_GKE_CLUSTER }}
-      BENCHMARK_GKE_GPU_NODEPOOL: ${{ vars.BENCHMARK_GKE_GPU_NODEPOOL }}
-    run: make benchmark-gke-cleanup
+```bash
+make benchmark-gke-cleanup
 ```
 
-The same cleanup can be invoked manually with those variables. The GPU node
-pool defaults to `gpu-h100`; all other GKE identity values are required unless
-they can be derived from a standard `gke_<project>_<location>_<cluster>` context
-name. A cleanup failure is intentional: it prevents a subsequent campaign from
-hiding leaked resources.
+The GPU node pool defaults to `gpu-h100`; all other GKE identity values are
+required unless they can be derived from a standard
+`gke_<project>_<location>_<cluster>` context name. A cleanup failure is
+intentional: it prevents a subsequent campaign from hiding leaked resources.

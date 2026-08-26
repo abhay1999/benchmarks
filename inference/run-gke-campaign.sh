@@ -4,8 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-CONTROLLER_DIR="${REPO_ROOT}/controller"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MAKE_BIN="${BENCHMARK_MAKE_BIN:-make}"
 FINALIZER_ARMED=false
 CAMPAIGN_CLEANUP_REQUIRED=false
@@ -14,7 +13,7 @@ log() { echo "[gke-campaign] $*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
 run_make() {
-  "${MAKE_BIN}" -C "${CONTROLLER_DIR}" "$@"
+  "${MAKE_BIN}" -C "${REPO_ROOT}" "$@"
 }
 
 set_defaults() {
@@ -145,8 +144,8 @@ main() {
   log "cluster lifecycle: ${BENCHMARK_GKE_CLUSTER_LIFECYCLE}"
   run_make benchmark-gke-plan
 
-  # Ephemeral CI must also clean up a cluster created by a partially failing
-  # provisioning operation. Retained clusters are armed after provisioning.
+  # The destroy lifecycle must also clean up a cluster created by a partially
+  # failing provisioning operation. Retained clusters are armed afterwards.
   if [[ "${BENCHMARK_GKE_CLUSTER_LIFECYCLE}" == destroy ]]; then
     FINALIZER_ARMED=true
     trap finalize_campaign EXIT
