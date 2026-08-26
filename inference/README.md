@@ -58,36 +58,31 @@ campaign identity differs from existing runs.
 
 ### Prerequisites
 
-Create a Kind cluster and install the Gateway API CRDs on it first. The CRDs
-are required even for the `service` treatment: `run-benchmark.sh` resolves
-its internal endpoint with `kubectl get service,gateway`, which fails if the
-`gateway` resource type isn't registered on the cluster.
+Install the Gateway API CRDs on the cluster first (`make kind-create` creates
+the cluster if it doesn't already exist). The CRDs are required even for the
+`service` treatment: `run-benchmark.sh` resolves its internal endpoint with
+`kubectl get service,gateway`, which fails if the `gateway` resource type
+isn't registered on the cluster.
 
 ```bash
-kind create cluster --name agentgateway-benchmark
-
-kubectl apply --server-side -f \
-  "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/experimental-install.yaml"
+make kind-create
+make gw-api-crds
 ```
 
 Run the Service treatment:
 
 ```bash
-CLUSTER_NAME=agentgateway-benchmark \
 BENCHMARK_TREATMENT=service \
 BENCHMARK_CAMPAIGN_ID=local-sim \
-BENCHMARK_CLUSTER_PROVIDER=kind \
-./run-benchmark.sh
+make benchmark
 ```
 
 Then run standalone agentgateway with the same inputs:
 
 ```bash
-CLUSTER_NAME=agentgateway-benchmark \
 BENCHMARK_TREATMENT=agentgateway-standalone \
 BENCHMARK_CAMPAIGN_ID=local-sim \
-BENCHMARK_CLUSTER_PROVIDER=kind \
-./run-benchmark.sh
+make benchmark
 ```
 
 The Kind provider is the default. It always imports the selected agentgateway
@@ -139,7 +134,7 @@ BENCHMARK_WORKLOAD_STORAGE_PROFILE=shared \
 BENCHMARK_GPU_RELEASE_POLICY=after-load \
 BENCHMARK_CAMPAIGN_ID=<campaign-id> \
 BENCHMARK_TREATMENT=<treatment> \
-make -C controller benchmark
+make benchmark
 ```
 
 The reference profile requires agentgateway v1.4.1. The wrapper verifies the
@@ -196,7 +191,7 @@ export BENCHMARK_GKE_NODE_SERVICE_ACCOUNT=default
 # This is unnecessary when the configured Secret already exists.
 export HF_TOKEN=hf_your_token
 
-make -C controller benchmark-gke-all
+make benchmark-gke-all
 ```
 
 Unless explicitly overridden, the target:
@@ -232,7 +227,7 @@ For an ephemeral CI environment, request cluster destruction explicitly:
 ```bash
 BENCHMARK_GKE_PROJECT=your-gcp-project \
 BENCHMARK_GKE_CLUSTER_LIFECYCLE=destroy \
-make -C controller benchmark-gke-all
+make benchmark-gke-all
 ```
 
 The `destroy` lifecycle arms the finalizer before provisioning so a partial
@@ -297,8 +292,8 @@ export BENCHMARK_SECRET_NAMESPACE=benchmark-secrets
 export BENCHMARK_HF_SECRET_NAME=llm-d-hf-token
 test -n "${HF_TOKEN:?HF_TOKEN must be set}"
 
-make -C controller benchmark-gke-plan
-make -C controller benchmark-gke-provision
+make benchmark-gke-plan
+make benchmark-gke-provision
 
 kubectl --context "${BENCHMARK_KUBE_CONTEXT}" \
   create namespace "${BENCHMARK_SECRET_NAMESPACE}" \
@@ -316,7 +311,7 @@ finalize_campaign() {
   local campaign_status=$?
   local cleanup_status=0
   trap - EXIT
-  make -C controller benchmark-gke-cleanup || cleanup_status=$?
+  make benchmark-gke-cleanup || cleanup_status=$?
   if (( campaign_status != 0 )); then
     exit "${campaign_status}"
   fi
@@ -327,14 +322,14 @@ trap finalize_campaign EXIT
 for treatment in service agentgateway-standalone agentgateway-gateway; do
   # after-load returns this pool to zero while CPU-side collection and
   # reporting finish, so every subsequent treatment must reacquire it.
-  make -C controller benchmark-gke-gpu-up
-  BENCHMARK_TREATMENT="${treatment}" make -C controller benchmark
+  make benchmark-gke-gpu-up
+  BENCHMARK_TREATMENT="${treatment}" make benchmark
 done
 
 export BENCHMARK_CAMPAIGN_DIR="../inference/results/llm-d-benchmark/${BENCHMARK_CAMPAIGN_ID}"
 export BENCHMARK_COMPARISONS="service:agentgateway-standalone service:agentgateway-gateway"
 export BENCHMARK_REPORT_FORMATS=markdown,png,csv
-make -C controller benchmark-report
+make benchmark-report
 ```
 
 The native campaign evidence and generated reports are written to:
@@ -454,7 +449,7 @@ Generate the two Service comparisons after all treatments complete:
 ```bash
 BENCHMARK_CAMPAIGN_DIR=../inference/results/llm-d-benchmark/<campaign-id> \
 BENCHMARK_COMPARISONS='service:agentgateway-standalone service:agentgateway-gateway' \
-make -C controller benchmark-report
+make benchmark-report
 ```
 
 The reporting target creates a dedicated Python virtual environment under
@@ -544,7 +539,7 @@ inference/run-benchmark.sh --list-scenarios
 Remove only the managed llm-d-benchmark checkout and its virtual environment:
 
 ```bash
-make -C controller benchmark-clean
+make benchmark-clean
 ```
 
 This does not delete a Kubernetes cluster or a retained treatment.
@@ -555,9 +550,9 @@ The GKE cluster and node pools can be created independently with the
 non-interactive `gcloud` provisioning layer:
 
 ```bash
-BENCHMARK_GKE_PROJECT=<project> make -C controller benchmark-gke-plan
-BENCHMARK_GKE_PROJECT=<project> make -C controller benchmark-gke-provision
-BENCHMARK_GKE_PROJECT=<project> make -C controller benchmark-gke-gpu-up
+BENCHMARK_GKE_PROJECT=<project> make benchmark-gke-plan
+BENCHMARK_GKE_PROJECT=<project> make benchmark-gke-provision
+BENCHMARK_GKE_PROJECT=<project> make benchmark-gke-gpu-up
 ```
 
 The benchmark runner never provisions infrastructure implicitly. This keeps
@@ -590,7 +585,7 @@ steps:
       BENCHMARK_GKE_PROJECT: ${{ vars.BENCHMARK_GKE_PROJECT }}
       BENCHMARK_GKE_LOCATION: ${{ vars.BENCHMARK_GKE_LOCATION }}
       BENCHMARK_GKE_CLUSTER: ${{ vars.BENCHMARK_GKE_CLUSTER }}
-    run: make -C controller benchmark-gke-provision
+    run: make benchmark-gke-provision
 
   - name: Acquire GPU capacity
     env:
@@ -598,7 +593,7 @@ steps:
       BENCHMARK_GKE_LOCATION: ${{ vars.BENCHMARK_GKE_LOCATION }}
       BENCHMARK_GKE_CLUSTER: ${{ vars.BENCHMARK_GKE_CLUSTER }}
       BENCHMARK_GKE_GPU_NODEPOOL: ${{ vars.BENCHMARK_GKE_GPU_NODEPOOL }}
-    run: make -C controller benchmark-gke-gpu-up
+    run: make benchmark-gke-gpu-up
 
   # The treatment step follows. Keep the finalizer unconditional.
 
@@ -611,7 +606,7 @@ steps:
       BENCHMARK_GKE_LOCATION: ${{ vars.BENCHMARK_GKE_LOCATION }}
       BENCHMARK_GKE_CLUSTER: ${{ vars.BENCHMARK_GKE_CLUSTER }}
       BENCHMARK_GKE_GPU_NODEPOOL: ${{ vars.BENCHMARK_GKE_GPU_NODEPOOL }}
-    run: make -C controller benchmark-gke-cleanup
+    run: make benchmark-gke-cleanup
 ```
 
 The same cleanup can be invoked manually with those variables. The GPU node
