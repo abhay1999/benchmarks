@@ -7,7 +7,7 @@ suite adapters should preserve the same metric definitions instead of adding
 suite-specific behavior to the renderers.
 
 Install the pinned dependencies in a virtual environment or use
-`make -C controller benchmark-report`, which manages
+`make benchmark-report`, which manages
 `inference/.venv` automatically.
 
 Prism is an optional output format. When selected, the generator copies each

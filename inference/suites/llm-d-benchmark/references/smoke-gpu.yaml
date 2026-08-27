@@ -1,0 +1,22 @@
+# Keep the billable smoke phase independent of the full H100 campaign's large
+# shared Filestore cache. The public, small model can be fetched directly by
+# vLLM and both temporary volumes can use inexpensive zonal persistent disks.
+scenario:
+  - name: smoke-gpu
+    modelservice:
+      uriProtocol: hf
+    decode:
+      mountModelVolume: false
+      vllm:
+        modelCommand: imageDefault
+    storage:
+      modelPvc:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard-rwo
+        size: 2Gi
+      workloadPvc:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard-rwo
+        size: 3Gi

@@ -11,21 +11,6 @@ CLUSTER_NODE_VERSION ?= v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab
 kind-create: ## Create a KinD cluster
 	kind get clusters | grep $(CLUSTER_NAME) || kind create cluster --name $(CLUSTER_NAME) --image kindest/node:$(CLUSTER_NODE_VERSION)
 
-# Pinned to match the version agentgateway/agentgateway is built against.
-# Update alongside that repo's sigs.k8s.io/gateway-api version.
-CONFORMANCE_CHANNEL ?= experimental
-CONFORMANCE_VERSION ?= v1.6.1
-.PHONY: gw-api-crds
-gw-api-crds: ## Install the Gateway API CRDs
-	kubectl apply --server-side -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$(CONFORMANCE_VERSION)/$(CONFORMANCE_CHANNEL)-install.yaml"
-
-# Pinned to match the version agentgateway/agentgateway is built against.
-# Update alongside that repo's sigs.k8s.io/gateway-api-inference-extension version.
-GIE_CRD_VERSION ?= v1.5.0
-.PHONY: gie-crds
-gie-crds: ## Install the Gateway API Inference Extension CRDs
-	kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/$(GIE_CRD_VERSION)/manifests.yaml"
-
 # Set to the same cluster used by kind-create so we don't spin up a second one.
 BENCHMARK_LLM_D_BENCHMARK_DIR ?=
 BENCHMARK_CLUSTER_PROVIDER ?= kind
@@ -59,6 +44,18 @@ benchmark-gke-cleanup: ## Delete one GKE campaign's resources and scale its GPU 
 .PHONY: benchmark-gke-all
 benchmark-gke-all: ## Run the complete three-treatment optimized-baseline GKE campaign
 	inference/run-gke-campaign.sh
+
+.PHONY: benchmark-gke-smoke-sim
+benchmark-gke-smoke-sim: ## Run the low-cost GKE simulator smoke campaign
+	inference/run-gke-smoke.sh sim
+
+.PHONY: benchmark-gke-smoke-gpu
+benchmark-gke-smoke-gpu: ## Run the explicitly billable one-node GKE GPU smoke campaign
+	inference/run-gke-smoke.sh gpu
+
+.PHONY: benchmark-gke-smoke-all
+benchmark-gke-smoke-all: ## Gate the minimal GKE GPU smoke campaign on simulator success
+	inference/run-gke-smoke.sh all
 
 .PHONY: benchmark-gke-plan
 benchmark-gke-plan: ## Validate prerequisites and show the desired GKE infrastructure
