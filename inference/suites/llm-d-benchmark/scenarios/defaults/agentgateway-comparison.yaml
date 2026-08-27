@@ -1,0 +1,14 @@
+# The wrapper's default comparison is decode-only so its plain-Service baseline
+# and inference-gateway treatment use the same backend topology. Upstream guide
+# scenarios keep their own prefill/decode semantics instead.
+scenario:
+  - name: agentgateway-comparison
+    prefill:
+      enabled: false
+      replicas: 0
+    # The decode-only topology does not need llm-d's prefill/decode routing
+    # sidecar. Disabling it also keeps the comparison independent of the
+    # modelservice chart's sidecar CLI, which evolves with llm-d-router.
+    routing:
+      proxy:
+        enabled: false
