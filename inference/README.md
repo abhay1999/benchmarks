@@ -5,10 +5,6 @@ retains their native evidence in a shared campaign, and generates publishable
 Markdown, PNG, and CSV comparisons. Prism-compatible Benchmark Report v0.2
 documents remain available in each treatment's evidence bundle.
 
-PR #1 intentionally migrates tooling only. Curated reports from the original
-agentgateway repository change are not part of this migration and will be
-published separately with their supporting evidence.
-
 ## Layout
 
 ```text

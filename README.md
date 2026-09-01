@@ -25,6 +25,11 @@ make kind-create
 BENCHMARK_TREATMENT=service BENCHMARK_CAMPAIGN_ID=local-sim make benchmark
 ```
 
+The `service` treatment runs fine on a laptop-sized Kind cluster.
+`agentgateway-standalone` and `agentgateway-gateway` currently need more CPU/memory
+than most laptops provide for the router pod - see
+[#2](https://github.com/agentgateway/benchmarks/issues/2).
+
 See [`inference/README.md`](inference/README.md) for the full set of treatments,
 GKE campaign instructions, and configuration reference.
 

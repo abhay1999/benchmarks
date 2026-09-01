@@ -75,7 +75,5 @@ Warm-up stages whose requested rate is repeated in the measured ladder are exclu
 
 ## Evidence
 
-- [k8s service (RR) native results](../../../../../results/llm-d-benchmark/optimized-baseline-v0230-gateway-refresh-20260817/runs/service)
-- [agentgateway on Kubernetes native results](../../../../../results/llm-d-benchmark/optimized-baseline-v0230-gateway-refresh-20260817/runs/agentgateway-gateway)
 - [Campaign manifest](../campaign-manifest.yaml)
 - [Normalized metrics](metrics.csv)
