@@ -1,14 +1,12 @@
-# Published inference reports
+# Published inference benchmark reports
 
-PR #1 intentionally migrates the inference benchmark tooling only. Published
-reports and their supporting evidence will be added separately after the
-tooling migration is complete.
-
-Curated reports belong under a suite and profile-specific path, for example:
+Curated benchmark reports may be committed below this directory using:
 
 ```text
-inference/reports/llm-d-benchmark/optimized-baseline-qwen3-32b-h100/
+<suite>/<benchmark-profile>/<campaign-id>/
 ```
 
-Generated local reports remain under the ignored campaign directory in
-`inference/results/` until they are reviewed and selected for publication.
+Raw and per-request evidence stays in the ignored `../results` tree or durable
+external storage. Every published report must retain its campaign manifest,
+normalized metrics, and provenance. Link native evidence only when it has a
+durable archive URL; do not commit links into the ignored local results tree.
